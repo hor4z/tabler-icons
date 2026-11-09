@@ -1,0 +1,14 @@
+name: Sincronizar con Tabler
+# main es un espejo exacto de tabler/tabler-icons. Este workflow vive en la rama sync (la rama por defecto)
+# para que main nunca se separe de la original. Corre todos los días y se puede lanzar a mano.
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh repo sync "$GITHUB_REPOSITORY" --branch main --source tabler/tabler-icons
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
