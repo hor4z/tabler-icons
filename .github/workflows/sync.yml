@@ -5,10 +5,33 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
-      - run: gh repo sync "$GITHUB_REPOSITORY" --branch main --source tabler/tabler-icons
+      # El token de Actions no dispara los workflows de Tabler que vienen en main. Solo no puede escribir
+      # archivos de .github/workflows: si Tabler cambió alguno, hace falta SYNC_TOKEN (Contents y Workflows).
+      - name: Traer main desde Tabler
         env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if ! gh repo sync "$GH_REPO" --branch main --source tabler/tabler-icons; then
+            if [ -z "$SYNC_TOKEN" ]; then
+              echo "::error::Tabler cambió sus workflows y el token de Actions no puede copiarlos. Falta el secreto SYNC_TOKEN."
+              exit 1
+            fi
+            GH_TOKEN="$SYNC_TOKEN" gh repo sync "$GH_REPO" --branch main --source tabler/tabler-icons
+          fi
+      # Los workflows de Tabler (release, build, ...) no tienen nada que hacer en el fork: se apagan y se cancela lo que haya arrancado.
+      - name: Apagar los workflows de Tabler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow list --all --json id,path,state -q '.[] | select(.path != ".github/workflows/sync.yml" and .state == "active") | .id' | xargs -r -n1 gh workflow disable
+          gh run list --limit 50 --json databaseId,workflowName,status -q '.[] | select(.workflowName != "Sincronizar con Tabler" and (.status == "queued" or .status == "in_progress")) | .databaseId' | xargs -r -n1 gh run cancel
